@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+.env
+.vscode/
+.idea/
+venv/
+.selenium_cache/
+.chrome_linkedin_profile/
