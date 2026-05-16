@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import hashlib
 import time
+import argparse
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -30,18 +31,27 @@ class LinkedInScraper:
 
     def __init__(self):
         self.creds = Passwords()
-        self.username = self.creds.get_credential("linked", "user")
-        self.password = self.creds.get_credential("linked", "pass")
+        self.username = self.creds.get_credential("linkedin", "user")
+        self.password = self.creds.get_credential("linkedin", "pass")
+        if not self.username or not self.password:
+            raise ValueError("LinkedIn credentials are missing from .env.")
         self.search_engine = Search()
         self.db_guard = DatabaseGuard()
 
         project_root = Path(__file__).resolve().parents[2]
 
-        selenium_cache = project_root / ".selenium_cache"
+        parent_runtime_root = project_root.parent
+        runtime_root = (
+            parent_runtime_root
+            if (parent_runtime_root / ".chrome_linkedin_profile").exists()
+            else project_root
+        )
+
+        selenium_cache = runtime_root / ".selenium_cache"
         selenium_cache.mkdir(exist_ok=True)
         os.environ["SE_CACHE_PATH"] = str(selenium_cache)
 
-        chrome_profile = project_root / ".chrome_linkedin_profile"
+        chrome_profile = runtime_root / ".chrome_linkedin_profile"
         chrome_profile.mkdir(exist_ok=True)
 
         options = Options()
@@ -81,10 +91,20 @@ class LinkedInScraper:
                 return True
 
             username_field = self.wait.until(
-                EC.presence_of_element_located((By.ID, "username"))
+                EC.presence_of_element_located(
+                    (
+                        By.CSS_SELECTOR,
+                        "#username, input[name='session_key'], input[autocomplete='username']",
+                    )
+                )
             )
             password_field = self.wait.until(
-                EC.presence_of_element_located((By.ID, "password"))
+                EC.presence_of_element_located(
+                    (
+                        By.CSS_SELECTOR,
+                        "#password, input[name='session_password'], input[type='password']",
+                    )
+                )
             )
 
             username_field.clear()
@@ -235,12 +255,27 @@ class LinkedInScraper:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run LinkedIn scraper.")
+    parser.add_argument(
+        "--scrape",
+        action="store_true",
+        help="Run the full keyword scraping flow after login.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=15,
+        help="Maximum new results per keyword when --scrape is used.",
+    )
+    args = parser.parse_args()
+
     bot = LinkedInScraper()
     try:
         if bot.login():
-            data = bot.scrape_all_keywords()
-            print(f"Prepared {len(data)} leads for the next stage.")
-
-        time.sleep(10)
+            if args.scrape:
+                data = bot.scrape_all_keywords(limit_per_keyword=args.limit)
+                print(f"Prepared {len(data)} leads for the next stage.")
+            else:
+                print("Login smoke test completed. Use --scrape to collect leads.")
     finally:
         bot.driver.quit()
